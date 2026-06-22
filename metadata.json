@@ -1,0 +1,6 @@
+{
+  "name": "Control de Finanzas Personales",
+  "description": "Una aplicación premium interactiva para el control de tus finanzas personales (ingresos, facturas, gastos variables, ahorros y presupuestos) con exportación a plantilla Excel (.xlsx) profesional con fórmulas automáticas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
