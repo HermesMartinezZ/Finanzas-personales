@@ -32,6 +32,7 @@ export interface Ahorro {
   id: string;
   fecha: string; // YYYY-MM-DD
   descripcion: string;
+  categoria?: string; // Bolsillo o destino del ahorro
   valor: number;
 }
 
@@ -56,4 +57,5 @@ export interface FinanzasData {
   ahorros: Ahorro[];
   presupuestos: Presupuesto[];
   historial: HistorialMensual[];
+  categoriasAhorro?: string[]; // Bolsillos o cuentas de ahorro personalizadas
 }

@@ -5,40 +5,123 @@
 
 import React, { useState } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { CalendarRange, Plus, Trash2, Landmark, History } from 'lucide-react';
+import { CalendarRange, Plus, Trash2, Landmark, History, Check, X, Sparkles } from 'lucide-react';
 import { HistorialMensual, FinanzasData } from '../types';
 
 interface HistorialTabProps {
   data: FinanzasData;
   onAddHistorial: (newItem: Omit<HistorialMensual, 'id'>) => void;
   onDeleteHistorial: (id: string) => void;
+  onCloseCurrentMonth: (mesName: string, clearCurrentData: boolean) => void;
 }
 
-export function HistorialTab({ data, onAddHistorial, onDeleteHistorial }: HistorialTabProps) {
+export function HistorialTab({ data, onAddHistorial, onDeleteHistorial, onCloseCurrentMonth }: HistorialTabProps) {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [mes, setMes] = useState('');
   const [ingresosVal, setIngresosVal] = useState('');
   const [gastosVal, setGastosVal] = useState('');
   const [ahorrosVal, setAhorrosVal] = useState('');
 
-  // June calculations for the LIVE comparative line
+  // Auto close states
+  const defaultMonthName = () => {
+    const meses = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+    const d = new Date();
+    return `${meses[d.getMonth()]} ${d.getFullYear()}`;
+  };
+
+  const [isAutoCloseOpen, setIsAutoCloseOpen] = useState(false);
+  const [autoCloseMesName, setAutoCloseMesName] = useState(defaultMonthName());
+  const [clearCurrentData, setClearCurrentData] = useState(true);
+
+  const getMonthYearFromDate = (dateStr: string): string => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length < 2) return '';
+    const year = parts[0];
+    const monthInt = parseInt(parts[1], 10);
+    const meses = [
+      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+      "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+    ];
+    if (monthInt >= 1 && monthInt <= 12) {
+      return `${meses[monthInt - 1]} ${year}`;
+    }
+    return '';
+  };
+
+  const getCombinedHistorial = (): HistorialMensual[] => {
+    const groups: { [key: string]: { ingresos: number; gastos: number; ahorros: number } } = {};
+    
+    data.ingresos.forEach(i => {
+      const m = getMonthYearFromDate(i.fecha);
+      if (!m) return;
+      if (!groups[m]) groups[m] = { ingresos: 0, gastos: 0, ahorros: 0 };
+      groups[m].ingresos += i.valor;
+    });
+
+    data.facturas.forEach(f => {
+      const m = getMonthYearFromDate(f.fechaPago || f.fechaVencimiento);
+      if (!m) return;
+      if (!groups[m]) groups[m] = { ingresos: 0, gastos: 0, ahorros: 0 };
+      groups[m].gastos += f.valor;
+    });
+
+    data.gastos.forEach(g => {
+      const m = getMonthYearFromDate(g.fecha);
+      if (!m) return;
+      if (!groups[m]) groups[m] = { ingresos: 0, gastos: 0, ahorros: 0 };
+      groups[m].gastos += g.valor;
+    });
+
+    data.ahorros.forEach(a => {
+      const m = getMonthYearFromDate(a.fecha);
+      if (!m) return;
+      if (!groups[m]) groups[m] = { ingresos: 0, gastos: 0, ahorros: 0 };
+      groups[m].ahorros += a.valor;
+    });
+
+    const dynamicHistoryList: HistorialMensual[] = Object.keys(groups).map(mesName => {
+      const g = groups[mesName];
+      return {
+        id: `dynamic-${mesName}`,
+        mes: mesName,
+        ingresos: g.ingresos,
+        gastos: g.gastos,
+        ahorros: g.ahorros,
+        disponible: g.ingresos - g.gastos - g.ahorros
+      };
+    });
+
+    const filteredStaticHistory = data.historial.filter(h => {
+      if (h.id === 'live-june' || h.id.startsWith('live-') || h.id.startsWith('dynamic-')) return false;
+      return !groups[h.mes];
+    });
+
+    const combined = [...filteredStaticHistory, ...dynamicHistoryList];
+
+    const parseMonthYearToValue = (my: string): number => {
+      const parts = my.split(' ');
+      if (parts.length < 2) return 0;
+      const monthName = parts[0];
+      const year = parseInt(parts[1], 10);
+      const meses = [
+        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+      ];
+      const monthIndex = meses.indexOf(monthName);
+      return year * 12 + (monthIndex !== -1 ? monthIndex : 0);
+    };
+
+    return combined.sort((a, b) => parseMonthYearToValue(a.mes) - parseMonthYearToValue(b.mes));
+  };
+
+  const fullHistorial = getCombinedHistorial();
+
+  // Live calculations for the auto-close prefilled metrics of active tables
   const liveIngresos = data.ingresos.reduce((s, i) => s + i.valor, 0);
   const liveGastos = data.facturas.reduce((s, f) => s + f.valor, 0) + data.gastos.reduce((s, g) => s + g.valor, 0);
   const liveAhorros = data.ahorros.reduce((s, a) => s + a.valor, 0);
   const liveDisponible = liveIngresos - liveGastos - liveAhorros;
-
-  // Combine static and live
-  const fullHistorial = [
-    ...data.historial,
-    {
-      id: 'live-june',
-      mes: 'Junio 2026 (Live)',
-      ingresos: liveIngresos,
-      gastos: liveGastos,
-      ahorros: liveAhorros,
-      disponible: liveDisponible
-    }
-  ];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,19 +196,44 @@ export function HistorialTab({ data, onAddHistorial, onDeleteHistorial }: Histor
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Table representation */}
         <div className="lg:col-span-2 bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5 pb-4 border-b border-slate-100">
             <div>
               <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-widest">Cierre de Periodos</h4>
               <p className="text-[10px] text-slate-400 mt-0.5">Resumen histórico almacenado que sustenta las proyecciones anuales.</p>
             </div>
 
-            <button 
-              id="btn-toggle-add-historial"
-              onClick={() => setIsFormOpen(!isFormOpen)}
-              className="bg-slate-900 border border-slate-800 text-white hover:bg-slate-800 text-xxs font-extrabold uppercase px-3 py-2 rounded-lg transition-all cursor-pointer"
-            >
-              Cerrar Periodo Anterior
-            </button>
+            <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+              <div className="flex items-center gap-1.5 bg-green-50 text-green-750 border border-green-200/60 px-3 py-1.5 rounded-lg text-[10px] font-extrabold uppercase shrink-0">
+                <Sparkles size={11} className="animate-pulse text-green-600" />
+                <span>Cierre Automático Activo</span>
+              </div>
+
+              <button 
+                id="btn-toggle-add-historial"
+                onClick={() => {
+                  setIsFormOpen(!isFormOpen);
+                  setIsAutoCloseOpen(false);
+                }}
+                className="flex-1 sm:flex-none bg-slate-900 border border-slate-800 text-white hover:bg-slate-800 text-xxs font-extrabold uppercase px-3 py-2 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1"
+              >
+                Ajuste Histórico Manual
+              </button>
+            </div>
+          </div>
+
+          {/* Explanation Banner about Automatic Closing */}
+          <div className="mb-5 p-4 bg-slate-50 border border-slate-200/80 rounded-xl flex items-start gap-3">
+            <div className="bg-green-100 text-green-700 p-2 rounded-lg shrink-0">
+              <Sparkles size={15} />
+            </div>
+            <div className="space-y-1">
+              <h5 className="text-xs font-bold text-slate-800">Liquidación y Traspaso 100% Automático</h5>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                El sistema consolida, cierra y archiva cada mes de forma automática a partir de tus ingresos, facturas y gastos registrados. 
+                <strong> El dinero disponible remanente de cada período se acumula y transfiere automáticamente </strong> 
+                al nuevo mes. No requieres realizar acciones manuales de cierre.
+              </p>
+            </div>
           </div>
 
           {/* Form */}
@@ -213,43 +321,58 @@ export function HistorialTab({ data, onAddHistorial, onDeleteHistorial }: Histor
                   <th className="py-2.5 px-3 text-right">Ingresos</th>
                   <th className="py-2.5 px-3 text-right">Gastos Fijos/Var</th>
                   <th className="py-2.5 px-3 text-right">Ahorros</th>
-                  <th className="py-2.5 px-3 text-right">Disponible</th>
+                  <th className="py-2.5 px-3 text-right">Disponible (Acumulado)</th>
                   <th className="py-2.5 px-3 text-center">Acción</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-150">
-                {fullHistorial.map((item) => {
-                  const isLive = item.id === 'live-june';
-                  return (
-                    <tr key={item.id} className={isLive ? 'bg-green-50/20 font-bold' : 'hover:bg-slate-50/10'}>
-                      <td className="py-2.5 px-3">
-                        <span className="flex items-center gap-1.5">
-                          {isLive && <span className="w-1.5 h-1.5 rounded-full bg-green-550 animate-ping shrink-0" />}
-                          {item.mes}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono text-slate-650">{formataCOP(item.ingresos)}</td>
-                      <td className="py-2.5 px-3 text-right font-mono text-slate-650">{formataCOP(item.gastos)}</td>
-                      <td className="py-2.5 px-3 text-right font-mono text-slate-650">{formataCOP(item.ahorros)}</td>
-                      <td className={`py-2.5 px-3 text-right font-mono font-bold ${item.disponible >= 0 ? 'text-slate-800' : 'text-red-650'}`}>
-                        {formataCOP(item.disponible)}
-                      </td>
-                      <td className="py-2.5 px-3 text-center">
-                        {!isLive ? (
-                          <button 
-                            onClick={() => onDeleteHistorial(item.id)}
-                            className="text-slate-400 hover:text-red-650 p-0.5 rounded transition-all cursor-pointer align-middle"
-                            id={`btn-delete-historial-${item.id}`}
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        ) : (
-                          <span className="text-[10px] text-green-700 font-bold uppercase">En Curso</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {(() => {
+                  let runningCumulative = 0;
+                  return fullHistorial.map((item) => {
+                    const isLive = item.id === 'live-june';
+                    const isDynamic = item.id.startsWith('dynamic-');
+                    runningCumulative += item.disponible;
+                    const disponibleAcumulado = runningCumulative;
+
+                    return (
+                      <tr key={item.id} className={isLive || isDynamic ? 'bg-slate-50/20 font-medium' : 'hover:bg-slate-50/10'}>
+                        <td className="py-2.5 px-3">
+                          <span className="flex items-center gap-1.5">
+                            {isLive && <span className="w-1.5 h-1.5 rounded-full bg-green-550 animate-ping shrink-0" />}
+                            {item.mes}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-slate-650">{formataCOP(item.ingresos)}</td>
+                        <td className="py-2.5 px-3 text-right font-mono text-slate-650">{formataCOP(item.gastos)}</td>
+                        <td className="py-2.5 px-3 text-right font-mono text-slate-650">{formataCOP(item.ahorros)}</td>
+                        <td className="py-2.5 px-3 text-right">
+                          <div className={`font-mono font-bold ${disponibleAcumulado >= 0 ? 'text-slate-800' : 'text-red-650'}`}>
+                            {formataCOP(disponibleAcumulado)}
+                          </div>
+                          <div className={`text-[10px] font-mono ${item.disponible >= 0 ? 'text-green-600' : 'text-rose-500'}`}>
+                            {item.disponible >= 0 ? '+' : ''}{formataCOP(item.disponible)} este mes
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          {isDynamic ? (
+                            <span className="text-[10px] text-green-600 font-extrabold uppercase px-1.5 py-0.5 bg-green-50 border border-green-200/50 rounded" title="Calculado automáticamente en base a tus registros reales de este mes">Automático</span>
+                          ) : isLive ? (
+                            <span className="text-[10px] text-green-750 font-bold uppercase">En Curso</span>
+                          ) : (
+                            <button 
+                              onClick={() => onDeleteHistorial(item.id)}
+                              className="text-slate-400 hover:text-red-650 p-0.5 rounded transition-all cursor-pointer align-middle"
+                              id={`btn-delete-historial-${item.id}`}
+                              title="Eliminar registro manual"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  });
+                })()}
               </tbody>
             </table>
           </div>

@@ -10,15 +10,31 @@ import { Ingreso, HistorialMensual } from '../types';
 interface IngresosTabProps {
   ingresos: Ingreso[];
   historial: HistorialMensual[];
+  defaultDate?: string;
+  selectedMonth?: string;
   onAddIngreso: (newIng: Omit<Ingreso, 'id'>) => void;
   onDeleteIngreso: (id: string) => void;
   onUpdateIngreso: (updated: Ingreso) => void;
 }
 
-export function IngresosTab({ ingresos, historial, onAddIngreso, onDeleteIngreso, onUpdateIngreso }: IngresosTabProps) {
+export function IngresosTab({ 
+  ingresos, 
+  historial, 
+  defaultDate,
+  selectedMonth = 'Todos',
+  onAddIngreso, 
+  onDeleteIngreso, 
+  onUpdateIngreso 
+}: IngresosTabProps) {
   const [concepto, setConcepto] = useState('');
   const [valor, setValor] = useState('');
-  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
+  const [fecha, setFecha] = useState(defaultDate || new Date().toISOString().split('T')[0]);
+
+  React.useEffect(() => {
+    if (defaultDate) {
+      setFecha(defaultDate);
+    }
+  }, [defaultDate]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isFormOpen, setIsFormOpen] = useState(false);
 
@@ -59,14 +75,15 @@ export function IngresosTab({ ingresos, historial, onAddIngreso, onDeleteIngreso
 
     setConcepto('');
     setValor('');
-    setFecha(new Date().toISOString().split('T')[0]);
+    setFecha(defaultDate || new Date().toISOString().split('T')[0]);
     setIsFormOpen(false);
   };
 
   // Calculations
+  const isAllTime = selectedMonth === 'Todos';
   const totalMes = ingresos.reduce((sum, item) => sum + item.valor, 0);
-  const totalHistoricoAnterior = (historial || []).reduce((sum, item) => sum + item.ingresos, 0);
-  const totalAcumuladoAnual = totalMes + totalHistoricoAnterior;
+  const totalAcumuladoAnual = (historial || []).reduce((sum, item) => sum + item.ingresos, 0);
+  const totalHistoricoAnterior = Math.max(0, totalAcumuladoAnual - totalMes);
 
   // Filter incomes
   const filteredIngresos = ingresos.filter(ing => 
@@ -90,7 +107,9 @@ export function IngresosTab({ ingresos, historial, onAddIngreso, onDeleteIngreso
             <TrendingUp size={20} />
           </div>
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">Total Ingresos del Mes</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block">
+              {isAllTime ? 'Total Ingresos en Curso (Periodos Activos)' : `Total Ingresos (${selectedMonth})`}
+            </span>
             <span className="text-2xl font-mono font-bold text-slate-900">{formataCOP(totalMes)}</span>
           </div>
         </div>
@@ -104,8 +123,8 @@ export function IngresosTab({ ingresos, historial, onAddIngreso, onDeleteIngreso
             <span className="text-2xl font-mono font-bold text-slate-900">{formataCOP(totalAcumuladoAnual)}</span>
             <span className="text-[10px] text-slate-400 block mt-0.5">
               {totalHistoricoAnterior > 0 
-                ? `Incluye ${formataCOP(totalHistoricoAnterior)} acumulados de Periodos Cerrados` 
-                : 'Sin saldo acumulado de meses anteriores'}
+                ? `Incluye ${formataCOP(totalHistoricoAnterior)} acumulados de ${isAllTime ? 'Periodos Cerrados' : 'Otros Periodos'}` 
+                : 'Sin saldo acumulado de otros periodos'}
             </span>
           </div>
         </div>

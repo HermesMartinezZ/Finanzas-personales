@@ -9,28 +9,59 @@ import { Ahorro, HistorialMensual } from '../types';
 
 interface AhorrosTabProps {
   ahorros: Ahorro[];
+  todosLosAhorros?: Ahorro[];
   historial: HistorialMensual[];
+  categoriasAhorro: string[];
+  defaultDate?: string;
+  selectedMonth?: string;
   onAddAhorro: (newAhorro: Omit<Ahorro, 'id'>) => void;
   onDeleteAhorro: (id: string) => void;
   onUpdateAhorro: (updated: Ahorro) => void;
+  onAddCategoriaAhorro: (nueva: string) => void;
+  onDeleteCategoriaAhorro: (catName: string) => void;
 }
 
-export function AhorrosTab({ ahorros, historial, onAddAhorro, onDeleteAhorro, onUpdateAhorro }: AhorrosTabProps) {
+export function AhorrosTab({ 
+  ahorros, 
+  todosLosAhorros = [],
+  historial, 
+  categoriasAhorro, 
+  defaultDate,
+  selectedMonth = 'Todos',
+  onAddAhorro, 
+  onDeleteAhorro, 
+  onUpdateAhorro,
+  onAddCategoriaAhorro,
+  onDeleteCategoriaAhorro
+}: AhorrosTabProps) {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [descripcion, setDescripcion] = useState('');
+  const [categoria, setCategoria] = useState(categoriasAhorro[0] || 'Bolsillo General');
   const [valor, setValor] = useState('');
-  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
+  const [fecha, setFecha] = useState(defaultDate || new Date().toISOString().split('T')[0]);
+
+  React.useEffect(() => {
+    if (defaultDate) {
+      setFecha(defaultDate);
+    }
+  }, [defaultDate]);
+
+  // Dynamic category creation state
+  const [nuevaCat, setNuevaCat] = useState('');
+  const [isNuevaCatOpen, setIsNuevaCatOpen] = useState(false);
 
   // Editing state variables
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFecha, setEditFecha] = useState('');
   const [editDescripcion, setEditDescripcion] = useState('');
+  const [editCategoria, setEditCategoria] = useState('');
   const [editValor, setEditValor] = useState('');
 
   const startEditing = (item: Ahorro) => {
     setEditingId(item.id);
     setEditFecha(item.fecha);
     setEditDescripcion(item.descripcion);
+    setEditCategoria(item.categoria || 'Bolsillo General');
     setEditValor(item.valor.toString());
   };
 
@@ -40,6 +71,7 @@ export function AhorrosTab({ ahorros, historial, onAddAhorro, onDeleteAhorro, on
       id,
       fecha: editFecha,
       descripcion: editDescripcion.trim(),
+      categoria: editCategoria || 'Bolsillo General',
       valor: Number(editValor)
     });
     setEditingId(null);
@@ -51,20 +83,33 @@ export function AhorrosTab({ ahorros, historial, onAddAhorro, onDeleteAhorro, on
 
     onAddAhorro({
       descripcion: descripcion.trim(),
+      categoria: categoria || 'Bolsillo General',
       valor: Number(valor),
       fecha
     });
 
     setDescripcion('');
     setValor('');
-    setFecha(new Date().toISOString().split('T')[0]);
+    setFecha(defaultDate || new Date().toISOString().split('T')[0]);
     setIsFormOpen(false);
+  };
+
+  const handleAddCategoryLocal = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nuevaCat.trim()) return;
+    onAddCategoriaAhorro(nuevaCat.trim());
+    setCategoria(nuevaCat.trim()); // Auto-select newly created pocket
+    setNuevaCat('');
+    setIsNuevaCatOpen(false);
   };
 
   // Calculations
   const ahorroDelMes = ahorros.reduce((sum, item) => sum + item.valor, 0);
-  const fondosAnteriores = (historial || []).reduce((sum, item) => sum + item.ahorros, 0);
-  const ahorroTotalAcumulado = ahorroDelMes + fondosAnteriores;
+  // Sum only the static (archived historical) months savings, since we already sum all detailed active savings in todosLosAhorros
+  const fondosAnteriores = (historial || [])
+    .filter(h => !h.id.startsWith('dynamic-') && h.id !== 'live-june' && !h.id.startsWith('live-'))
+    .reduce((sum, item) => sum + item.ahorros, 0);
+  const ahorroTotalAcumulado = todosLosAhorros.reduce((sum, item) => sum + item.valor, 0) + fondosAnteriores;
 
   const formataCOP = (val: number) => {
     return new Intl.NumberFormat('es-CO', {
@@ -72,6 +117,18 @@ export function AhorrosTab({ ahorros, historial, onAddAhorro, onDeleteAhorro, on
       currency: 'COP',
       maximumFractionDigits: 0
     }).format(val);
+  };
+
+  // Calculate sum per pocket across ALL time
+  const getPocketTotal = (catName: string) => {
+    return todosLosAhorros
+      .filter(item => (item.categoria || 'Bolsillo General').toLowerCase() === catName.toLowerCase())
+      .reduce((sum, item) => sum + item.valor, 0);
+  };
+
+  // Check if pocket can be deleted (no items assigned to it across ALL time)
+  const isPocketDeletable = (catName: string) => {
+    return !todosLosAhorros.some(item => (item.categoria || 'Bolsillo General').toLowerCase() === catName.toLowerCase());
   };
 
   return (
@@ -97,9 +154,9 @@ export function AhorrosTab({ ahorros, historial, onAddAhorro, onDeleteAhorro, on
         {/* Monthly saving */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-450 block">Ahorro del Mes (Junio)</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-450 block">Ahorro del Periodo Seleccionado</span>
             <span className="text-2xl font-mono font-bold text-slate-900 block mt-1">{formataCOP(ahorroDelMes)}</span>
-            <span className="text-[10px] text-slate-400 mt-1 block">Aportaciones registradas hoy</span>
+            <span className="text-[10px] text-slate-400 mt-1 block">Suma de depósitos en {selectedMonth === 'Todos' ? 'todos los meses' : selectedMonth}</span>
           </div>
           <div className="bg-green-50 text-green-600 p-3 rounded-lg border border-green-100">
             <Sparkles size={18} />
@@ -107,18 +164,92 @@ export function AhorrosTab({ ahorros, historial, onAddAhorro, onDeleteAhorro, on
         </div>
       </div>
 
+      {/* Pockets Section (Bolsillos) */}
+      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+          <div>
+            <h3 className="text-xs font-extrabold text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
+              <PiggyBank size={14} className="text-green-600" />
+              <span>Mis Bolsillos y Cuentas de Ahorro</span>
+            </h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">Tu dinero separado según tus propósitos y metas personales.</p>
+          </div>
+
+          <button
+            onClick={() => setIsNuevaCatOpen(!isNuevaCatOpen)}
+            className="w-full sm:w-auto text-xxs font-extrabold text-green-700 hover:text-green-800 flex items-center justify-center gap-1 uppercase bg-green-50 px-3 py-1.5 rounded-xl border border-green-100 cursor-pointer"
+          >
+            <Plus size={11} />
+            {isNuevaCatOpen ? 'Cerrar Registro' : 'Crear Nuevo Bolsillo'}
+          </button>
+        </div>
+
+        {/* Create Pocket Form */}
+        {isNuevaCatOpen && (
+          <form onSubmit={handleAddCategoryLocal} className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex gap-2 items-center animate-fadeIn">
+            <input
+              type="text"
+              required
+              placeholder="e.g. Fondo Vehículo, Viaje Europa, Tecnología"
+              value={nuevaCat}
+              onChange={(e) => setNuevaCat(e.target.value)}
+              className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-green-600 flex-1"
+            />
+            <button
+              type="submit"
+              className="bg-green-600 hover:bg-green-700 text-white font-bold text-xxs px-4 py-2 rounded-lg cursor-pointer shrink-0 transition-colors"
+            >
+              Crear Bolsillo
+            </button>
+          </form>
+        )}
+
+        {/* Pockets Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          {categoriasAhorro.map((catName) => {
+            const pocketTotal = getPocketTotal(catName);
+            const deletable = isPocketDeletable(catName);
+            return (
+              <div key={catName} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex flex-col justify-between hover:border-slate-300 transition-all relative group">
+                {deletable && (
+                  <button
+                    onClick={() => onDeleteCategoriaAhorro(catName)}
+                    className="absolute top-2 right-2 text-slate-300 hover:text-red-600 transition-colors p-0.5 rounded cursor-pointer opacity-0 group-hover:opacity-100"
+                    title={`Eliminar bolsillo "${catName}"`}
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+                <div>
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block truncate pr-4">{catName}</span>
+                  <span className="text-base font-mono font-bold text-slate-800 block mt-1">{formataCOP(pocketTotal)}</span>
+                </div>
+                <div className="mt-3 flex items-center justify-between text-[10px]">
+                  <span className="text-slate-400">Separado</span>
+                  <span className="text-green-600 font-bold bg-green-50 px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wide">Activo</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Main Panel */}
       <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
           <div>
-            <h3 className="text-xs font-extrabold text-slate-700 uppercase tracking-widest">Registro de Aportes de Capital</h3>
-            <p className="text-[11px] text-slate-400 mt-0.5">Bitácora simple de traslados a tus bolsillos de inversión o ahorro.</p>
+            <h3 className="text-xs font-extrabold text-slate-700 uppercase tracking-widest">Registro de Depósitos</h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">Bitácora de traslados dirigidos a tus bolsillos financieros {selectedMonth === 'Todos' ? '(Historial Completo)' : `en ${selectedMonth}`}.</p>
           </div>
 
           <button 
             id="btn-toggle-add-savings"
-            onClick={() => setIsFormOpen(!isFormOpen)}
-            className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 px-4 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            onClick={() => {
+              setIsFormOpen(!isFormOpen);
+              // reset to first category when opening
+              if (categoriasAhorro.length > 0) setCategoria(categoriasAhorro[0]);
+            }}
+            className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
           >
             <Plus size={14} />
             {isFormOpen ? 'OCULTAR FORMULARIO' : 'REGISTRAR APORTE DE AHORRO'}
@@ -133,7 +264,7 @@ export function AhorrosTab({ ahorros, historial, onAddAhorro, onDeleteAhorro, on
               <h4 className="text-xs font-extrabold text-slate-700 uppercase tracking-wider">Registrar un nuevo aporte</h4>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="flex flex-col gap-1">
                 <label htmlFor="fecha-aho" className="text-xxs font-bold uppercase tracking-wider text-slate-455">Fecha del Aporte</label>
                 <input 
@@ -147,12 +278,27 @@ export function AhorrosTab({ ahorros, historial, onAddAhorro, onDeleteAhorro, on
               </div>
 
               <div className="flex flex-col gap-1">
-                <label htmlFor="desc-aho" className="text-xxs font-bold uppercase tracking-wider text-slate-455">Descripción / Cuenta de Destino</label>
+                <label htmlFor="cat-aho" className="text-xxs font-bold uppercase tracking-wider text-slate-455">Bolsillo de Destino</label>
+                <select
+                  id="cat-aho"
+                  required
+                  value={categoria}
+                  onChange={(e) => setCategoria(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-green-600"
+                >
+                  {categoriasAhorro.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label htmlFor="desc-aho" className="text-xxs font-bold uppercase tracking-wider text-slate-455">Detalle o Nota</label>
                 <input 
                   id="desc-aho"
                   type="text"
                   required
-                  placeholder="e.g. Bolsa Vacaciones, Cuenta Alta Rentabilidad"
+                  placeholder="e.g. Traspaso quincena, Ahorro extra"
                   value={descripcion}
                   onChange={(e) => setDescripcion(e.target.value)}
                   className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-green-600"
@@ -195,14 +341,15 @@ export function AhorrosTab({ ahorros, historial, onAddAhorro, onDeleteAhorro, on
 
         {/* Contributions Timeline/List */}
         <div className="space-y-3">
-          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Historial de Aportes de este Mes</h4>
+          <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Historial de Aportes Activos</h4>
           
           <div className="overflow-x-auto rounded-xl border border-slate-200">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-widest text-[10px]">
-                  <th className="py-2.5 px-4">Fecha de Depósito</th>
-                  <th className="py-2.5 px-4">Detalle / Destino</th>
+                  <th className="py-2.5 px-4">Fecha</th>
+                  <th className="py-2.5 px-4">Bolsillo de Destino</th>
+                  <th className="py-2.5 px-4">Nota / Detalle</th>
                   <th className="py-2.5 px-4 text-right">Valor Ahorrado</th>
                   <th className="py-2.5 px-4 text-center">Acciones</th>
                 </tr>
@@ -211,6 +358,7 @@ export function AhorrosTab({ ahorros, historial, onAddAhorro, onDeleteAhorro, on
                 {ahorros.length > 0 ? (
                   ahorros.map((item) => {
                     const isEditing = editingId === item.id;
+                    const itemCat = item.categoria || 'Bolsillo General';
                     return (
                       <tr key={item.id} className={`hover:bg-slate-50/50 transition-colors ${isEditing ? 'bg-green-50/20' : ''}`}>
                         <td className="py-3 px-4 font-mono text-[11px]">
@@ -225,6 +373,23 @@ export function AhorrosTab({ ahorros, historial, onAddAhorro, onDeleteAhorro, on
                             <span className="text-slate-500">{item.fecha}</span>
                           )}
                         </td>
+                        <td className="py-3 px-4">
+                          {isEditing ? (
+                            <select
+                              value={editCategoria}
+                              onChange={(e) => setEditCategoria(e.target.value)}
+                              className="bg-white border border-slate-200 rounded px-1.5 py-1 text-xs focus:outline-none focus:border-green-600 font-sans"
+                            >
+                              {categoriasAhorro.map(c => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="inline-block bg-green-50 text-green-700 border border-green-100 font-bold px-2 py-0.5 rounded text-[10px] uppercase">
+                              {itemCat}
+                            </span>
+                          )}
+                        </td>
                         <td className="py-3 px-4 font-bold text-slate-700">
                           {isEditing ? (
                             <input 
@@ -234,10 +399,7 @@ export function AhorrosTab({ ahorros, historial, onAddAhorro, onDeleteAhorro, on
                               className="bg-white border border-slate-200 rounded px-1.5 py-1 text-xs focus:outline-none focus:border-green-600 font-sans w-full"
                             />
                           ) : (
-                            <div className="flex items-center gap-1.5">
-                              <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
-                              {item.descripcion}
-                            </div>
+                            item.descripcion
                           )}
                         </td>
                         <td className="py-3 px-4 text-right font-mono font-bold text-green-700">
@@ -298,8 +460,8 @@ export function AhorrosTab({ ahorros, historial, onAddAhorro, onDeleteAhorro, on
                   })
                 ) : (
                   <tr>
-                    <td colSpan={4} className="py-8 text-center text-slate-400">
-                      No has agregado depósitos de ahorro todavía para este mes de Junio.
+                    <td colSpan={5} className="py-8 text-center text-slate-400">
+                      No has agregado depósitos de ahorro todavía para este mes.
                     </td>
                   </tr>
                 )}
@@ -311,7 +473,7 @@ export function AhorrosTab({ ahorros, historial, onAddAhorro, onDeleteAhorro, on
         {/* Info advice box */}
         <div className="mt-4 p-4 rounded-xl bg-slate-50 border border-slate-200 text-xxs text-slate-450 leading-relaxed">
           <p>
-            📌 <strong>Aclaración:</strong> Esta sección opera exclusivamente como un diario o registro de aportes de capital. No define metas artificiales difíciles de mantener, ayudándote de forma realista y visual. Los datos agregados alimentarán de forma íntegra las fórmulas consolidadas y las celdas de tu archivo Excel.
+            📌 <strong>Aclaración:</strong> Esta sección opera como un organizador de bolsillos de ahorro. Puedes crear múltiples bolsillos y destinar tus aportes para separar tu dinero de forma segura. Tus saldos y totales acumulados se actualizan automáticamente en tiempo real.
           </p>
         </div>
       </div>

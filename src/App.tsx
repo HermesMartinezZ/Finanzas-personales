@@ -43,6 +43,9 @@ export default function App() {
     return localStorage.getItem('control_finanzas_user_initials') || 'JD';
   });
 
+  // State for active period / month filter (defaults to Julio 2026, which matches today's date)
+  const [selectedMonth, setSelectedMonth] = useState<string>('Julio 2026');
+
   // Keep initials localStorage updated
   useEffect(() => {
     localStorage.setItem('control_finanzas_user_initials', userInitials);
@@ -241,11 +244,143 @@ export default function App() {
     }));
   };
 
-  // Calculated balance for the header
-  const totalIng = data.ingresos.reduce((s, i) => s + i.valor, 0);
-  const totalGas = data.facturas.reduce((s, f) => s + f.valor, 0) + data.gastos.reduce((s, g) => s + g.valor, 0);
-  const totalAho = data.ahorros.reduce((s, a) => s + a.valor, 0);
-  const balanceGeneral = totalIng - totalGas - totalAho;
+  const handleAddCategoriaAhorro = (nueva: string) => {
+    setData(prev => {
+      const cats = prev.categoriasAhorro || ['Fondo de Emergencia', 'Vacaciones', 'Tecnología/Computador', 'Inversión/Acciones', 'Bolsillo General'];
+      if (cats.some(c => c.toLowerCase() === nueva.trim().toLowerCase())) return prev;
+      return {
+        ...prev,
+        categoriasAhorro: [...cats, nueva.trim()]
+      };
+    });
+  };
+
+  const handleDeleteCategoriaAhorro = (catName: string) => {
+    setData(prev => {
+      const cats = prev.categoriasAhorro || ['Fondo de Emergencia', 'Vacaciones', 'Tecnología/Computador', 'Inversión/Acciones', 'Bolsillo General'];
+      return {
+        ...prev,
+        categoriasAhorro: cats.filter(c => c !== catName)
+      };
+    });
+  };
+
+  const getMonthYearFromDate = (dateStr: string): string => {
+    if (!dateStr) return '';
+    const parts = dateStr.split('-');
+    if (parts.length < 2) return '';
+    const year = parts[0];
+    const monthInt = parseInt(parts[1], 10);
+    const meses = [
+      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+      "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+    ];
+    if (monthInt >= 1 && monthInt <= 12) {
+      return `${meses[monthInt - 1]} ${year}`;
+    }
+    return '';
+  };
+
+  // Combine static and live history dynamically
+  const getCombinedHistorial = (): HistorialMensual[] => {
+    const groups: { [key: string]: { ingresos: number; gastos: number; ahorros: number } } = {};
+    
+    data.ingresos.forEach(i => {
+      const m = getMonthYearFromDate(i.fecha);
+      if (!m) return;
+      if (!groups[m]) groups[m] = { ingresos: 0, gastos: 0, ahorros: 0 };
+      groups[m].ingresos += i.valor;
+    });
+
+    data.facturas.forEach(f => {
+      const m = getMonthYearFromDate(f.fechaPago || f.fechaVencimiento);
+      if (!m) return;
+      if (!groups[m]) groups[m] = { ingresos: 0, gastos: 0, ahorros: 0 };
+      groups[m].gastos += f.valor;
+    });
+
+    data.gastos.forEach(g => {
+      const m = getMonthYearFromDate(g.fecha);
+      if (!m) return;
+      if (!groups[m]) groups[m] = { ingresos: 0, gastos: 0, ahorros: 0 };
+      groups[m].gastos += g.valor;
+    });
+
+    data.ahorros.forEach(a => {
+      const m = getMonthYearFromDate(a.fecha);
+      if (!m) return;
+      if (!groups[m]) groups[m] = { ingresos: 0, gastos: 0, ahorros: 0 };
+      groups[m].ahorros += a.valor;
+    });
+
+    const dynamicHistoryList: HistorialMensual[] = Object.keys(groups).map(mesName => {
+      const g = groups[mesName];
+      return {
+        id: `dynamic-${mesName}`,
+        mes: mesName,
+        ingresos: g.ingresos,
+        gastos: g.gastos,
+        ahorros: g.ahorros,
+        disponible: g.ingresos - g.gastos - g.ahorros
+      };
+    });
+
+    const filteredStaticHistory = data.historial.filter(h => {
+      if (h.id === 'live-june' || h.id.startsWith('live-') || h.id.startsWith('dynamic-')) return false;
+      return !groups[h.mes];
+    });
+
+    const combined = [...filteredStaticHistory, ...dynamicHistoryList];
+
+    const parseMonthYearToValue = (my: string): number => {
+      const parts = my.split(' ');
+      if (parts.length < 2) return 0;
+      const monthName = parts[0];
+      const year = parseInt(parts[1], 10);
+      const meses = [
+        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+      ];
+      const monthIndex = meses.indexOf(monthName);
+      return year * 12 + (monthIndex !== -1 ? monthIndex : 0);
+    };
+
+    return combined.sort((a, b) => parseMonthYearToValue(a.mes) - parseMonthYearToValue(b.mes));
+  };
+
+  const handleCloseCurrentMonth = (mesName: string, clearCurrentData: boolean) => {
+    // Determine dynamic values for the chosen month
+    const targetMonthIngresos = data.ingresos.filter(i => getMonthYearFromDate(i.fecha) === mesName).reduce((s, i) => s + i.valor, 0);
+    const targetMonthGastos = data.facturas.filter(f => getMonthYearFromDate(f.fechaPago || f.fechaVencimiento) === mesName).reduce((s, f) => s + f.valor, 0) + 
+                             data.gastos.filter(g => getMonthYearFromDate(g.fecha) === mesName).reduce((s, g) => s + g.valor, 0);
+    const targetMonthAhorros = data.ahorros.filter(a => getMonthYearFromDate(a.fecha) === mesName).reduce((s, a) => s + a.valor, 0);
+    const targetMonthDisponible = targetMonthIngresos - targetMonthGastos - targetMonthAhorros;
+
+    const item: HistorialMensual = {
+      id: `hist-${Date.now()}`,
+      mes: mesName,
+      ingresos: targetMonthIngresos,
+      gastos: targetMonthGastos,
+      ahorros: targetMonthAhorros,
+      disponible: targetMonthDisponible
+    };
+
+    setData(prev => {
+      // Avoid duplicate static records for same month name
+      const filteredHist = prev.historial.filter(h => h.mes !== mesName);
+      return {
+        ...prev,
+        historial: [...filteredHist, item]
+      };
+    });
+
+    // Notify user of completion without destroying raw transactions
+    alert(`Período ${mesName} cerrado y compilado en el historial de manera segura.`);
+  };
+
+  // Calculated balance for the header (sum of all monthly balances)
+  const combinedHistorial = getCombinedHistorial();
+  const balanceGeneral = combinedHistorial.reduce((s, h) => s + h.disponible, 0);
 
   const formataCOP = (val: number) => {
     return new Intl.NumberFormat('es-CO', {
@@ -352,6 +487,98 @@ export default function App() {
     fileReader.readAsText(file);
   };
 
+  // Get all available months dynamically
+  const getAvailableMonths = () => {
+    const list = new Set<string>();
+    list.add('Junio 2026');
+    list.add('Julio 2026');
+    
+    data.ingresos.forEach(i => {
+      const m = getMonthYearFromDate(i.fecha);
+      if (m) list.add(m);
+    });
+    data.facturas.forEach(f => {
+      const m = getMonthYearFromDate(f.fechaPago || f.fechaVencimiento);
+      if (m) list.add(m);
+    });
+    data.gastos.forEach(g => {
+      const m = getMonthYearFromDate(g.fecha);
+      if (m) list.add(m);
+    });
+    data.ahorros.forEach(a => {
+      const m = getMonthYearFromDate(a.fecha);
+      if (m) list.add(m);
+    });
+    data.historial.forEach(h => {
+      if (h.mes) list.add(h.mes);
+    });
+
+    const parseMonthYearToValue = (my: string): number => {
+      const parts = my.split(' ');
+      if (parts.length < 2) return 0;
+      const monthName = parts[0];
+      const year = parseInt(parts[1], 10);
+      const meses = [
+        "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+      ];
+      const monthIndex = meses.indexOf(monthName);
+      return year * 12 + (monthIndex !== -1 ? monthIndex : 0);
+    };
+
+    return Array.from(list).sort((a, b) => parseMonthYearToValue(b) - parseMonthYearToValue(a));
+  };
+
+  const availableMonths = getAvailableMonths();
+
+  // Helper for tab default dates
+  const getDefaultDateForMonth = (my: string): string => {
+    if (my === 'Todos') return new Date().toISOString().split('T')[0];
+    const parts = my.split(' ');
+    if (parts.length < 2) return new Date().toISOString().split('T')[0];
+    const monthName = parts[0];
+    const yearStr = parts[1];
+    const meses = [
+      "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+      "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+    ];
+    const monthIndex = meses.indexOf(monthName);
+    if (monthIndex === -1) return new Date().toISOString().split('T')[0];
+    
+    // check if current real date is in this month
+    const today = new Date();
+    const todayMonthIndex = today.getMonth();
+    const todayYear = today.getFullYear();
+    if (todayYear === parseInt(yearStr, 10) && todayMonthIndex === monthIndex) {
+      return today.toISOString().split('T')[0];
+    }
+    
+    // otherwise first day of that month
+    const monthNum = String(monthIndex + 1).padStart(2, '0');
+    return `${yearStr}-${monthNum}-01`;
+  };
+
+  const currentDefaultDate = getDefaultDateForMonth(selectedMonth);
+
+  // Compute filtered datasets
+  const isAllTime = selectedMonth === 'Todos';
+
+  const filteredIngresos = isAllTime 
+    ? data.ingresos 
+    : data.ingresos.filter(i => getMonthYearFromDate(i.fecha) === selectedMonth);
+
+  const filteredFacturas = isAllTime 
+    ? data.facturas 
+    : data.facturas.filter(f => getMonthYearFromDate(f.fechaPago || f.fechaVencimiento) === selectedMonth);
+
+  const filteredGastos = isAllTime 
+    ? data.gastos 
+    : data.gastos.filter(g => getMonthYearFromDate(g.fecha) === selectedMonth);
+
+  const filteredAhorros = isAllTime 
+    ? data.ahorros 
+    : data.ahorros.filter(a => getMonthYearFromDate(a.fecha) === selectedMonth);
+
   // Visual Tab definition list
   const tabsList = [
     { id: 'dashboard', label: 'DASHBOARD', icon: <span className="w-2 h-2 rounded-full bg-green-500 mr-2 shrink-0"></span> },
@@ -387,6 +614,22 @@ export default function App() {
           </div>
 
           <div className="flex flex-wrap items-center gap-4 w-full md:w-auto justify-end">
+            {/* Dynamic Period Selector Dropdown */}
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl shadow-sm">
+              <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold">Periodo:</span>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-transparent text-slate-800 font-extrabold text-xs focus:outline-none cursor-pointer pr-1"
+                id="header-period-select"
+              >
+                {availableMonths.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+                <option value="Todos">Ver Todo (Acumulado)</option>
+              </select>
+            </div>
+
             {/* Balance General Metric Widget */}
             <div className="relative">
               <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 px-4 py-1.5 rounded-xl">
@@ -577,12 +820,14 @@ export default function App() {
 
         {/* Action Panel Display Board */}
         <section className="flex-1 min-w-0">
-          {activeTab === 'dashboard' && <DashboardTab data={data} />}
+          {activeTab === 'dashboard' && <DashboardTab data={data} selectedMonth={selectedMonth} />}
           
           {activeTab === 'ingresos' && (
             <IngresosTab 
-              ingresos={data.ingresos} 
-              historial={data.historial}
+              ingresos={filteredIngresos} 
+              historial={combinedHistorial}
+              defaultDate={currentDefaultDate}
+              selectedMonth={selectedMonth}
               onAddIngreso={handleAddIngreso} 
               onDeleteIngreso={handleDeleteIngreso} 
               onUpdateIngreso={handleUpdateIngreso}
@@ -591,8 +836,10 @@ export default function App() {
 
           {activeTab === 'facturas' && (
             <FacturasTab 
-              facturas={data.facturas} 
+              facturas={filteredFacturas} 
               categorias={data.presupuestos.map(p => p.categoria)}
+              defaultDate={currentDefaultDate}
+              selectedMonth={selectedMonth}
               onAddFactura={handleAddFactura} 
               onToggleFacturaEstado={handleToggleFacturaEstado} 
               onDeleteFactura={handleDeleteFactura} 
@@ -603,8 +850,10 @@ export default function App() {
 
           {activeTab === 'gastos' && (
             <GastosTab 
-              gastos={data.gastos} 
+              gastos={filteredGastos} 
               categorias={data.presupuestos.map(p => p.categoria)}
+              defaultDate={currentDefaultDate}
+              selectedMonth={selectedMonth}
               onAddGasto={handleAddGasto} 
               onDeleteGasto={handleDeleteGasto} 
               onAddCategory={handleAddCategory}
@@ -614,18 +863,24 @@ export default function App() {
 
           {activeTab === 'ahorros' && (
             <AhorrosTab 
-              ahorros={data.ahorros} 
-              historial={data.historial}
+              ahorros={filteredAhorros} 
+              todosLosAhorros={data.ahorros}
+              historial={combinedHistorial}
+              categoriasAhorro={data.categoriasAhorro || ['Fondo de Emergencia', 'Vacaciones', 'Tecnología/Computador', 'Inversión/Acciones', 'Bolsillo General']}
+              defaultDate={currentDefaultDate}
+              selectedMonth={selectedMonth}
               onAddAhorro={handleAddAhorro} 
               onDeleteAhorro={handleDeleteAhorro} 
               onUpdateAhorro={handleUpdateAhorro}
+              onAddCategoriaAhorro={handleAddCategoriaAhorro}
+              onDeleteCategoriaAhorro={handleDeleteCategoriaAhorro}
             />
           )}
 
           {activeTab === 'presupuestos' && (
             <PresupuestoTab 
               presupuestos={data.presupuestos} 
-              gastos={data.gastos} 
+              gastos={filteredGastos} 
               onUpdatePresupuesto={handleUpdatePresupuesto} 
               onAddCategory={handleAddCategory}
               onDeleteCategory={handleDeleteCategory}
@@ -637,6 +892,7 @@ export default function App() {
               data={data} 
               onAddHistorial={handleAddHistorial} 
               onDeleteHistorial={handleDeleteHistorial} 
+              onCloseCurrentMonth={handleCloseCurrentMonth}
             />
           )}
 

@@ -10,6 +10,8 @@ import { Factura } from '../types';
 interface FacturasTabProps {
   facturas: Factura[];
   categorias: string[];
+  defaultDate?: string;
+  selectedMonth?: string;
   onAddFactura: (newBill: Omit<Factura, 'id'>) => void;
   onToggleFacturaEstado: (id: string, paymentDate?: string) => void;
   onDeleteFactura: (id: string) => void;
@@ -20,6 +22,8 @@ interface FacturasTabProps {
 export function FacturasTab({ 
   facturas, 
   categorias,
+  defaultDate,
+  selectedMonth = 'Todos',
   onAddFactura, 
   onToggleFacturaEstado, 
   onDeleteFactura,
@@ -30,7 +34,13 @@ export function FacturasTab({
   const [categoria, setCategoria] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [valor, setValor] = useState('');
-  const [vencimiento, setVencimiento] = useState(new Date().toISOString().split('T')[0]);
+  const [vencimiento, setVencimiento] = useState(defaultDate || new Date().toISOString().split('T')[0]);
+
+  React.useEffect(() => {
+    if (defaultDate) {
+      setVencimiento(defaultDate);
+    }
+  }, [defaultDate]);
   const [searchTerm, setSearchTerm] = useState('');
   const [stateFilter, setStateFilter] = useState<'all' | 'Pagado' | 'Pendiente' | 'Vencida'>('all');
   
@@ -107,7 +117,7 @@ export function FacturasTab({
     setCategoria('');
     setDescripcion('');
     setValor('');
-    setVencimiento(new Date().toISOString().split('T')[0]);
+    setVencimiento(defaultDate || new Date().toISOString().split('T')[0]);
     setIsFormOpen(false);
   };
 

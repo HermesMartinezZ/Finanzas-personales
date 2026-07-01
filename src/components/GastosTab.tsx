@@ -17,18 +17,35 @@ import { GastoVariable } from '../types';
 interface GastosTabProps {
   gastos: GastoVariable[];
   categorias: string[];
+  defaultDate?: string;
+  selectedMonth?: string;
   onAddGasto: (newGasto: Omit<GastoVariable, 'id'>) => void;
   onDeleteGasto: (id: string) => void;
   onAddCategory: (categoria: string, asignado: number) => void;
   onUpdateGasto: (updated: GastoVariable) => void;
 }
 
-export function GastosTab({ gastos, categorias, onAddGasto, onDeleteGasto, onAddCategory, onUpdateGasto }: GastosTabProps) {
+export function GastosTab({ 
+  gastos, 
+  categorias, 
+  defaultDate,
+  selectedMonth = 'Todos',
+  onAddGasto, 
+  onDeleteGasto, 
+  onAddCategory, 
+  onUpdateGasto 
+}: GastosTabProps) {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [categoria, setCategoria] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [valor, setValor] = useState('');
-  const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
+  const [fecha, setFecha] = useState(defaultDate || new Date().toISOString().split('T')[0]);
+
+  React.useEffect(() => {
+    if (defaultDate) {
+      setFecha(defaultDate);
+    }
+  }, [defaultDate]);
   const [searchTerm, setSearchTerm] = useState('');
   
   const [isCreatingCustom, setIsCreatingCustom] = useState(false);
@@ -96,7 +113,7 @@ export function GastosTab({ gastos, categorias, onAddGasto, onDeleteGasto, onAdd
 
     setDescripcion('');
     setValor('');
-    setFecha(new Date().toISOString().split('T')[0]);
+    setFecha(defaultDate || new Date().toISOString().split('T')[0]);
     setIsFormOpen(false);
   };
 
